@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRPO B1：kept / enabler / dropped 的 Δ̃ 分布分析（分池）</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f9fafb; color: #1f2937; padding: 24px; }
+  h1 { font-size: 23px; margin-bottom: 6px; }
+  .sub { color: #6b7280; font-size: 14px; margin-bottom: 16px; }
+  .poolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .poolbar .lbl { font-size: 13px; color: #374151; font-weight: 600; }
+  .pool { padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+          background: #fff; color: #4b5563; border: 1.5px solid #e5e7eb; transition: all .15s; }
+  .pool:hover { border-color: #a5b4fc; }
+  .pool.active { background: #4338ca; color: #fff; border-color: #4338ca; }
+  .pooldesc { font-size: 12px; color: #6b7280; margin-bottom: 12px; min-height: 16px; }
+  /* live stat strip */
+  .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+  .stat { border-radius: 10px; padding: 10px 14px; border: 1px solid #e5e7eb; background: #fff; }
+  .stat .name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .stat .row { font-size: 12px; color: #4b5563; line-height: 1.5; }
+  .stat.kept { border-left: 4px solid #16a34a; }
+  .stat.enabler { border-left: 4px solid #dc2626; }
+  .stat.dropped { border-left: 4px solid #2563eb; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .tab { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer;
+         background: #fff; color: #4b5563; border: 1px solid #e5e7eb; transition: all .15s; }
+  .tab:hover { background: #f3f4f6; }
+  .tab.active { background: #4f46e5; color: #fff; border-color: #4f46e5; box-shadow: 0 2px 6px rgba(79,70,229,.3); }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  .card h2 { font-size: 18px; margin-bottom: 4px; color: #374151; }
+  .card .desc { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 400px; }
+  .note { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+  .note.amber { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .note.purple { background: #faf5ff; border: 1px solid #e9d5ff; color: #6b21a8; }
+  .note.gray { background: #f9fafb; border: 1px solid #e5e7eb; color: #374151; }
+  .summary { margin-top: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; }
+  .summary h3 { font-size: 16px; margin-bottom: 8px; color: #374151; }
+  .summary p { font-size: 14px; color: #4b5563; line-height: 1.7; }
+  .hidden { display: none; }
+  button.mini { padding:3px 10px;border-radius:6px;border:1px solid #d1d5db;background:#f3f4f6;cursor:pointer;font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>CRPO B1：kept / enabler / dropped 的 Δ̃ 分布分析</h1>
+  <div class="sub">前缀增量对数似然 Δ̃ 在三组 × 四池上的分布形状。切换池观察信号如何随轨迹长度稀释。</div>
+
+  <div class="poolbar">
+    <span class="lbl">池：</span>
+    <div class="pool active" data-pool="narrow">narrow (2–8)</div>
+    <div class="pool" data-pool="mid">mid (1–15)</div>
+    <div class="pool" data-pool="tail">tail (16+)</div>
+    <div class="pool" data-pool="full">full (all)</div>
+  </div>
+  <div class="pooldesc" id="pooldesc"></div>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="histogram">分布直方图</div>
+    <div class="tab" data-tab="kept_fp">kept 假正例</div>
+    <div class="tab" data-tab="posside">正侧同质</div>
+    <div class="tab" data-tab="percentile">分位数对比</div>
+    <div class="tab" data-tab="contribution">Top-5%贡献分解</div>
+    <div class="tab" data-tab="tail_ratio">重尾比例</div>
+    <div class="tab" data-tab="cross_mean">池×组 Mean(全池)</div>
+    <div class="tab" data-tab="cross_median">池×组 Median(全池)</div>
+  </div>
+
+  <div class="card">
+    <div class="panel" id="p-histogram">
+      <h2>分布直方图：零附近主峰高度递减，尾巴厚度递增</h2>
+      <div class="desc">
+        组内占比(%)，bin 宽 0.5，末桶 7.5+ 为 ≥7.5 溢出。
+        <button id="logToggle" class="mini" style="margin-left:8px;">切换对数 Y 轴</button>
+      </div>
+      <div class="chart-wrap"><canvas id="c_histogram"></canvas></div>
+      <div class="note amber"><b>怎么看：</b>三组都是零附近单主峰。dropped（蓝）像尖钉；kept（绿）、enabler（红）主峰矮、双尾肥。切对数 Y 轴后右尾结构最清楚。<b>切到 narrow 池</b>会看到 kept 与 enabler 的正尾几乎重合，dropped 依旧压在零附近——短轨迹里信号最干净。</div>
+    </div>
+    <div class="panel hidden" id="p-kept_fp">
+      <h2>kept 假正例率：LRAT 判 RELEVANT，但 Δ̃ 说有害</h2>
+      <div class="desc">kept 组中 Δ̃ 低于各阈值的比例。Δ̃&lt;0 含大量零附近噪声，强有害看 Δ̃&lt;−0.5</div>
+      <div class="chart-wrap"><canvas id="c_kept_fp"></canvas></div>
+      <div class="note amber"><b>关键：</b>强假正例（Δ̃&lt;−0.5）会给 retriever 注错误梯度。它随池变化：<b>narrow 10.0% &gt; mid 9.5% &gt; full 8.5% &gt; tail 7.1%</b>——短轨迹里单个有害 RELEVANT 轮影响更大，长轨迹被摊薄。而 Δ̃&lt;0（含噪声）反而在 tail 最高（44%），因为长轨迹里大量轮次是零附近微负。这些正是 CRPO 连续权重要修正的对象。</div>
+    </div>
+    <div class="panel hidden" id="p-posside">
+      <h2>正侧同质：kept 和 enabler 的正贡献是同一个信号</h2>
+      <div class="desc">只取 Δ̃&gt;0 的轮次看分位数（对数 Y 轴）。kept 与 enabler 曲线贴合，dropped 低一个量级</div>
+      <div class="chart-wrap"><canvas id="c_posside"></canvas></div>
+      <div class="note purple"><b>结论：</b>当 enabler 真起作用时，信息增益与 kept 同量级、同形状；dropped 正侧小一个量级。<b>narrow 池尤其明显</b>——enabler 正侧 median（+1.41）甚至高于 kept（+0.90）。所以 kept 与 enabler 差别不在正贡献质量，只在正贡献<b>频率</b>与<b>负尾厚度</b>。三组不是"三档质量"，而是 LRAT 二值标签在两个方向都有噪声，CRPO 的 Δ̃ 是连续修正。</div>
+    </div>
+    <div class="panel hidden" id="p-percentile">
+      <h2>分位数折线：enabler 双尾远比 dropped 长</h2>
+      <div class="desc">enabler(红) vs dropped(蓝) 的 p1→p99。enabler 两条尾巴都长约一个量级</div>
+      <div class="chart-wrap"><canvas id="c_percentile"></canvas></div>
+      <div class="note gray"><b>看点：</b>p50 附近两组几乎重合，越往两端 enabler 张得越开。池越窄尾巴越夸张（narrow 池 enabler p99 高达 +11，p1 到 −4.1）；tail 池被压平，印证长轨迹稀释。</div>
+    </div>
+    <div class="panel hidden" id="p-contribution">
+      <h2>Top-5% 贡献分解：enabler 的 mean 由极少数极端轮次支撑</h2>
+      <div class="desc">去掉 top-5% 后 enabler 剩余均值 ≈ 0，与 dropped 无异</div>
+      <div class="chart-wrap"><canvas id="c_contribution"></canvas></div>
+      <div class="note amber"><b>关键：</b>enabler 的正 mean 几乎全部来自 top-5% 极端正轮次，剩余 95% 均值 ≈ 0（tail 池甚至略负）。这说明多数 enabler 是中性/绕路的试探动作，只有少数"关键一步"带来巨大信息增益。</div>
+    </div>
+    <div class="panel hidden" id="p-tail_ratio">
+      <h2>重尾比例：enabler 的极端值出现率远高于 dropped</h2>
+      <div class="desc">pos%、|Δ̃|&gt;2、Δ̃&gt;2、Δ̃&lt;−2 四项占比对比</div>
+      <div class="chart-wrap"><canvas id="c_tail_ratio"></canvas></div>
+      <div class="note gray"><b>解读：</b>enabler 的 pos% 常低于 dropped，但 |Δ̃|&gt;2 高出一个量级——少数轮次在"打开局面"与"引入噪声"间剧烈摆动，这就是 mean 高 / median 低 / pos% 低三者并存的机制。narrow 池最极端（|Δ̃|&gt;2 达 30.9%）。</div>
+    </div>
+    <div class="panel hidden" id="p-cross_mean">
+      <h2>池 × 组 Mean（跨全部池，与池选择器无关）</h2>
+      <div class="desc">narrow→tail：kept 从 +1.39 掉到 +0.38，enabler 从 +1.05 掉到 +0.09，全线衰减</div>
+      <div class="chart-wrap"><canvas id="c_cross_mean"></canvas></div>
+    </div>
+    <div class="panel hidden" id="p-cross_median">
+      <h2>池 × 组 Median（跨全部池，与池选择器无关）</h2>
+      <div class="desc">tail/full 池 enabler 中位数低于 dropped——重尾拉 mean 而中位数不动</div>
+      <div class="chart-wrap"><canvas id="c_cross_median"></canvas></div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <h3>一句话总结</h3>
+    <p>三组不是"三档质量"，而是 LRAT 二值 relevance 标签在两个方向上都有噪声：kept 混进约 8–10% 强有害假正例，enabler 里约半数达不到正贡献却藏着与 kept 等值的少数真金。kept 与 enabler 的正贡献同质，差别只在频率与负尾。信号随轨迹变长被稀释——narrow 池最干净、tail 池被压平——所以 narrow 是主力训练池的合理选择。CRPO 的连续 Δ̃ 权重正是对这种双向标签噪声与稀释的修正；无差别抬高 enabler 的 V6 方向错误，应让 Δ̃ 去挑 enabler 里值得留的轮次。</p>
+  </div>
+
+<script>
+const RED = "#dc2626", BLUE = "#2563eb", GREEN = "#16a34a";
+const ALLP = {"labels": ["-4.0", "-3.5", "-3.0", "-2.5", "-2.0", "-1.5", "-1.0", "-0.5", "0.0", "0.5", "1.0", "1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5", "6.0", "6.5", "7.0", "7.5"], "pools": {"narrow": {"hist": {"kept": [0.443, 0.213, 0.297, 0.645, 0.996, 2.021, 5.422, 24.66, 27.281, 6.367, 3.579, 2.787, 2.525, 2.281, 2.436, 2.203, 2.056, 1.837, 1.699, 1.641, 1.302, 1.209, 1.097, 5.002], "enabler": [1.749, 0.836, 1.337, 1.805, 3.398, 5.081, 8.29, 21.281, 20.167, 5.749, 2.574, 2.607, 2.585, 2.585, 2.429, 2.44, 2.273, 1.805, 1.749, 1.515, 1.348, 1.226, 1.036, 4.134], "dropped": [0.048, 0.006, 0.042, 0.083, 0.309, 0.601, 3.641, 34.563, 50.161, 6.038, 1.499, 0.696, 0.416, 0.351, 0.214, 0.202, 0.149, 0.149, 0.125, 0.095, 0.095, 0.095, 0.119, 0.303]}, "summary": {"kept": {"n": 34728, "mean": 1.389, "median": 0.168, "pos": 65.3, "std": 2.84}, "enabler": {"n": 8975, "mean": 1.051, "median": 0.093, "pos": 56.2, "std": 2.92}, "dropped_other": {"n": 16810, "mean": 0.167, "median": 0.04, "pos": 60.7, "std": 0.91}}, "keptfp": [34.7, 25.86, 10.04, 4.62, 1.6], "posside": {"kept": [0.056, 0.186, 0.896, 3.886, 6.818, 8.599, 12.306], "enabler": [0.083, 0.255, 1.411, 4.211, 6.799, 8.326, 12.315], "dropped": [0.019, 0.062, 0.165, 0.369, 0.772, 1.479, 6.006]}, "percentile": {"enabler": [-4.096, -2.123, -1.409, -0.403, 0.093, 2.027, 5.279, 7.06, 10.985], "dropped": [-1.052, -0.481, -0.296, -0.085, 0.04, 0.217, 0.52, 0.914, 4.427]}, "contribution": [9.378, 0.613, 1.051, 2.894, 0.023, 0.167], "tailratio": {"enabler": [56.2, 30.85, 25.13, 5.73], "dropped": [60.7, 2.49, 2.31, 0.18]}}, "mid": {"hist": {"kept": [0.371, 0.19, 0.277, 0.576, 0.914, 1.895, 5.301, 26.234, 28.953, 6.318, 3.382, 2.647, 2.321, 2.144, 2.252, 1.983, 1.806, 1.729, 1.56, 1.513, 1.175, 1.111, 0.973, 4.374], "enabler": [1.258, 0.652, 1.062, 1.679, 2.786, 4.516, 8.251, 26.483, 25.775, 5.763, 2.28, 2.056, 1.814, 1.837, 1.702, 1.679, 1.539, 1.281, 1.281, 1.011, 0.96, 0.775, 0.741, 2.82], "dropped": [0.041, 0.017, 0.044, 0.066, 0.238, 0.61, 3.419, 37.313, 49.455, 5.251, 1.212, 0.518, 0.338, 0.224, 0.182, 0.156, 0.112, 0.126, 0.109, 0.097, 0.087, 0.066, 0.073, 0.248]}, "summary": {"kept": {"n": 57425, "mean": 1.255, "median": 0.136, "pos": 64.2, "std": 2.71}, "enabler": {"n": 17804, "mean": 0.691, "median": 0.035, "pos": 53.3, "std": 2.5}, "dropped_other": {"n": 41157, "mean": 0.129, "median": 0.027, "pos": 58.2, "std": 0.83}}, "keptfp": [35.76, 25.9, 9.52, 4.22, 1.41], "posside": {"kept": [0.05, 0.162, 0.688, 3.532, 6.524, 8.28, 11.961], "enabler": [0.055, 0.163, 0.551, 3.142, 5.977, 7.621, 11.396], "dropped": [0.017, 0.057, 0.152, 0.336, 0.68, 1.188, 5.449]}, "percentile": {"enabler": [-3.831, -1.921, -1.2, -0.348, 0.035, 0.656, 4.119, 6.156, 9.857], "dropped": [-1.002, -0.466, -0.289, -0.09, 0.027, 0.188, 0.453, 0.76, 3.73]}, "contribution": [8.464, 0.281, 0.691, 2.466, 0.006, 0.129], "tailratio": {"enabler": [53.3, 22.09, 17.44, 4.65], "dropped": [58.2, 1.99, 1.82, 0.17]}}, "tail": {"hist": {"kept": [0.244, 0.086, 0.189, 0.34, 0.602, 1.217, 4.425, 37.246, 40.218, 5.085, 1.796, 1.154, 0.914, 0.831, 0.748, 0.61, 0.645, 0.615, 0.484, 0.456, 0.33, 0.282, 0.292, 1.194], "enabler": [0.609, 0.338, 0.531, 0.792, 1.316, 2.776, 6.701, 36.339, 38.282, 5.53, 1.866, 0.858, 0.572, 0.468, 0.435, 0.431, 0.323, 0.323, 0.331, 0.242, 0.16, 0.156, 0.134, 0.487], "dropped": [0.026, 0.01, 0.02, 0.049, 0.114, 0.394, 2.257, 42.083, 50.47, 3.249, 0.56, 0.211, 0.131, 0.067, 0.064, 0.043, 0.033, 0.038, 0.041, 0.025, 0.025, 0.024, 0.01, 0.055]}, "summary": {"kept": {"n": 39704, "mean": 0.376, "median": 0.026, "pos": 55.7, "std": 1.59}, "enabler": {"n": 26908, "mean": 0.093, "median": 0.003, "pos": 50.6, "std": 1.28}, "dropped_other": {"n": 124717, "mean": 0.048, "median": 0.014, "pos": 55.0, "std": 0.47}}, "keptfp": [44.35, 27.58, 7.1, 2.68, 0.86], "posside": {"kept": [0.025, 0.075, 0.202, 0.584, 3.055, 5.241, 9.213], "enabler": [0.031, 0.086, 0.21, 0.488, 1.434, 3.549, 7.412], "dropped": [0.016, 0.047, 0.116, 0.244, 0.448, 0.664, 2.018]}, "percentile": {"enabler": [-2.945, -1.204, -0.65, -0.22, 0.003, 0.213, 0.624, 1.456, 5.859], "dropped": [-0.805, -0.369, -0.234, -0.083, 0.014, 0.133, 0.307, 0.474, 1.214]}, "contribution": [4.18, -0.122, 0.093, 1.173, -0.011, 0.048], "tailratio": {"enabler": [50.6, 6.33, 4.06, 2.27], "dropped": [55.0, 0.66, 0.56, 0.11]}}, "full": {"hist": {"kept": [0.319, 0.147, 0.241, 0.48, 0.787, 1.617, 4.943, 30.735, 33.557, 5.814, 2.733, 2.036, 1.746, 1.607, 1.637, 1.422, 1.331, 1.274, 1.12, 1.081, 0.83, 0.772, 0.695, 3.074], "enabler": [0.868, 0.463, 0.743, 1.145, 1.901, 3.469, 7.318, 32.414, 33.302, 5.623, 2.031, 1.335, 1.067, 1.013, 0.939, 0.928, 0.807, 0.705, 0.709, 0.548, 0.479, 0.403, 0.376, 1.416], "dropped": [0.03, 0.012, 0.026, 0.053, 0.145, 0.448, 2.545, 40.9, 50.218, 3.746, 0.722, 0.287, 0.183, 0.106, 0.093, 0.071, 0.052, 0.06, 0.058, 0.043, 0.04, 0.034, 0.026, 0.102]}, "summary": {"kept": {"n": 97129, "mean": 0.896, "median": 0.073, "pos": 60.7, "std": 2.36}, "enabler": {"n": 44712, "mean": 0.331, "median": 0.012, "pos": 51.7, "std": 1.89}, "dropped_other": {"n": 165874, "mean": 0.068, "median": 0.017, "pos": 55.8, "std": 0.58}}, "keptfp": [39.27, 26.59, 8.53, 3.59, 1.19], "posside": {"kept": [0.037, 0.113, 0.375, 2.393, 5.671, 7.525, 11.302], "enabler": [0.039, 0.106, 0.28, 0.967, 4.169, 6.08, 9.784], "dropped": [0.016, 0.049, 0.124, 0.264, 0.502, 0.77, 3.097]}, "percentile": {"enabler": [-3.346, -1.528, -0.861, -0.259, 0.012, 0.298, 1.756, 4.263, 8.316], "dropped": [-0.861, -0.393, -0.246, -0.084, 0.017, 0.145, 0.341, 0.537, 1.719]}, "contribution": [6.8, -0.01, 0.331, 1.513, -0.008, 0.068], "tailratio": {"enabler": [51.7, 12.61, 9.39, 3.22], "dropped": [55.8, 0.99, 0.87, 0.12]}}}};
+const POOL_DESC = {
+  narrow: "narrow (2≤n≤8)：主力训练池，轮数适中、信号最干净，kept/enabler 分离最强。",
+  mid:    "mid (1≤n≤15)：中间档，覆盖度消融用。信号介于 narrow 与 tail 之间。",
+  tail:   "tail (n≥16)：长轨迹尾部。单轮信息增益被严重稀释，三组都压向零。",
+  full:   "full (全部 n)：最大覆盖，含超长轨迹。即之前所有分析的默认池——CRPO 不占优的稀释场景。"
+};
+let currentPool = "narrow";
+let histLog = false;
+const charts = {};
+const POOL_DEP = ["histogram","kept_fp","posside","percentile","contribution","tail_ratio"];
+
+function histLabels() {
+  const L = ALLP.labels.slice();
+  L[L.length-1] = "7.5+";
+  return L;
+}
+
+function renderStrip() {
+  const s = ALLP.pools[currentPool].summary;
+  const map = [["kept","kept"],["enabler","enabler"],["dropped_other","dropped"]];
+  document.getElementById("strip").innerHTML = map.map(([k,cls]) => {
+    const g = s[k];
+    return `<div class="stat ${cls}"><div class="name">${k}</div>
+      <div class="row">n=${g.n.toLocaleString()} · mean=${g.mean>=0?"+":""}${g.mean.toFixed(3)}</div>
+      <div class="row">median=${g.median>=0?"+":""}${g.median.toFixed(3)} · pos=${g.pos}% · std=${g.std}</div></div>`;
+  }).join("");
+  document.getElementById("pooldesc").textContent = POOL_DESC[currentPool];
+}
+
+function build(id) {
+  if (charts[id]) return;
+  const ctx = document.getElementById("c_" + id);
+  const P = ALLP.pools[currentPool];
+
+  if (id === "histogram") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: histLabels(), datasets: [
+        { label: "kept (%)", data: P.hist.kept, backgroundColor: "rgba(22,163,74,.55)", borderColor: GREEN, borderWidth: 1 },
+        { label: "enabler (%)", data: P.hist.enabler, backgroundColor: "rgba(220,38,38,.6)", borderColor: RED, borderWidth: 1 },
+        { label: "dropped_other (%)", data: P.hist.dropped, backgroundColor: "rgba(37,99,235,.5)", borderColor: BLUE, borderWidth: 1 }
+      ]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top" },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}%  (bin ${c.label})` } } },
+        scales: { y: { type: histLog ? "logarithmic" : "linear", grid: { color: "#e5e7eb" },
+                       title: { display: true, text: "组内占比 %" + (histLog ? "（对数）" : "") },
+                       ticks: { callback: (v) => v + "%" } },
+                  x: { grid: { display: false }, ticks: { maxRotation: 90, minRotation: 45, font: { size: 9 } } } }
+      }
+    });
+  } else if (id === "kept_fp") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: ["Δ̃<0 (含噪声)","Δ̃<-0.1","Δ̃<-0.5 (强假正例)","Δ̃<-1.0","Δ̃<-2.0"],
+        datasets: [{ label: `kept 组占比 % (${currentPool})`, data: P.keptfp,
+          backgroundColor: ["#fca5a5","#f87171","#dc2626","#b91c1c","#7f1d1d"] }] },
+      options: baseOpts(false, "%")
+    });
+  } else if (id === "posside") {
+    charts[id] = new Chart(ctx, {
+      type: "line",
+      data: { labels: ["p10","p25","p50","p75","p90","p95","p99"], datasets: [
+        { label: "kept (Δ̃>0)", data: P.posside.kept, borderColor: GREEN, backgroundColor: GREEN, borderWidth: 2.5, tension: .3, pointRadius: 4 },
+        { label: "enabler (Δ̃>0)", data: P.posside.enabler, borderColor: RED, backgroundColor: RED, borderWidth: 2.5, tension: .3, pointRadius: 4 },
+        { label: "dropped (Δ̃>0)", data: P.posside.dropped, borderColor: BLUE, backgroundColor: BLUE, borderWidth: 2.5, tension: .3, pointRadius: 4 }
+      ]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top" }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: +${c.parsed.y}` } } },
+        scales: { y: { type: "logarithmic", grid: { color: "#e5e7eb" }, title: { display: true, text: "Δ̃（对数）" } },
+                  x: { grid: { display: false } } } }
+    });
+  } else if (id === "percentile") {
+    charts[id] = new Chart(ctx, {
+      type: "line",
+      data: { labels: ["p1","p5","p10","p25","p50","p75","p90","p95","p99"], datasets: [
+        { label: "enabler (重尾)", data: P.percentile.enabler, borderColor: RED, backgroundColor: RED, borderWidth: 2.5, tension: .3, pointRadius: 5 },
+        { label: "dropped_other (窄峰)", data: P.percentile.dropped, borderColor: BLUE, backgroundColor: BLUE, borderWidth: 2.5, tension: .3, pointRadius: 5 }
+      ]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top" }, tooltip: { callbacks: { label: (c) => c.parsed.y.toFixed(3) } } },
+        scales: { y: { grid: { color: "#e5e7eb" } }, x: { grid: { display: false } } } }
+    });
+  } else if (id === "contribution") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: ["enabler top-5%","enabler rest 95%","enabler overall","dropped top-5%","dropped rest 95%","dropped overall"],
+        datasets: [{ label: "mean Δ̃", data: P.contribution,
+          backgroundColor: ["#ef4444","#fca5a5","#dc2626","#3b82f6","#93c5fd","#2563eb"] }] },
+      options: baseOpts(false)
+    });
+  } else if (id === "tail_ratio") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: ["pos%","|Δ|>2 %","Δ>2 %","Δ<-2 %"], datasets: [
+        { label: "enabler", data: P.tailratio.enabler, backgroundColor: RED },
+        { label: "dropped_other", data: P.tailratio.dropped, backgroundColor: BLUE }
+      ]},
+      options: baseOpts(true, "%")
+    });
+  } else if (id === "cross_mean") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: ["narrow","mid","tail","full"], datasets: [
+        { label: "kept", data: pluck("summary","kept","mean"), backgroundColor: GREEN },
+        { label: "enabler", data: pluck("summary","enabler","mean"), backgroundColor: RED },
+        { label: "dropped_other", data: pluck("summary","dropped_other","mean"), backgroundColor: BLUE }
+      ]},
+      options: baseOpts()
+    });
+  } else if (id === "cross_median") {
+    charts[id] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: ["narrow","mid","tail","full"], datasets: [
+        { label: "kept", data: pluck("summary","kept","median"), backgroundColor: GREEN },
+        { label: "enabler", data: pluck("summary","enabler","median"), backgroundColor: RED },
+        { label: "dropped_other", data: pluck("summary","dropped_other","median"), backgroundColor: BLUE }
+      ]},
+      options: baseOpts()
+    });
+  }
+}
+
+function pluck(sect, grp, field) {
+  return ["narrow","mid","tail","full"].map(p => ALLP.pools[p][sect][grp][field]);
+}
+
+function baseOpts(legend = true, unit = "") {
+  return { responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: legend, position: "top" },
+      tooltip: { callbacks: { label: (c) => `${c.dataset.label || ""}: ${c.parsed.y}${unit}` } } },
+    scales: { y: { grid: { color: "#e5e7eb" }, ticks: { callback: (v) => v + unit } },
+              x: { grid: { display: false } } } };
+}
+
+function activeTab() {
+  const t = document.querySelector(".tab.active");
+  return t ? t.dataset.tab : "histogram";
+}
+
+function showTab(tab) {
+  document.querySelectorAll(".panel").forEach(p => p.classList.add("hidden"));
+  document.getElementById("p-" + tab).classList.remove("hidden");
+  build(tab);
+  if (charts[tab]) charts[tab].resize();
+}
+
+// pool switch: destroy pool-dependent charts, rebuild current if visible
+function switchPool(pool) {
+  currentPool = pool;
+  renderStrip();
+  POOL_DEP.forEach(id => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } });
+  showTab(activeTab());
+}
+
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    showTab(t.dataset.tab);
+  });
+});
+document.querySelectorAll(".pool").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".pool").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    switchPool(b.dataset.pool);
+  });
+});
+document.getElementById("logToggle").addEventListener("click", () => {
+  histLog = !histLog;
+  if (charts["histogram"]) { charts["histogram"].destroy(); delete charts["histogram"]; }
+  if (activeTab() === "histogram") build("histogram");
+});
+
+renderStrip();
+showTab("histogram");
+</script>
+</body>
+</html>
