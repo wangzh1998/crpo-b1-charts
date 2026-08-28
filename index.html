@@ -83,43 +83,43 @@
 
   <div class="card">
     <div class="panel" id="p-histogram">
-      <h2>分布直方图：零附近主峰高度递减，尾巴厚度递增</h2>
+      <h2>分布直方图：零附近主峰高度递减，尾部权重递增</h2>
       <div class="desc">
         组内占比(%)，bin 宽 0.5，末桶 7.5+ 为 ≥7.5 溢出。
         <button id="logToggle" class="mini" style="margin-left:8px;">切换对数 Y 轴</button>
       </div>
       <div class="chart-wrap"><canvas id="c_histogram"></canvas></div>
-      <div class="note amber"><b>怎么看：</b>三组都是零附近单主峰。dropped（蓝）像尖钉；kept（绿）、enabler（红）主峰矮、双尾肥。切对数 Y 轴后右尾结构最清楚。<b>切到 narrow 池</b>会看到 kept 与 enabler 的正尾几乎重合，dropped 依旧压在零附近——短轨迹里信号最干净。</div>
+      <div class="note amber"><b>怎么看：</b>三组都是零附近单主峰。dropped（蓝）为窄尖峰；kept（绿）、enabler（红）主峰较低、双尾较重。切对数 Y 轴后右尾结构最清楚。<b>切到 narrow 池</b>会看到 kept 与 enabler 的正尾几乎重合，dropped 集中在零附近——短轨迹里信号最干净。</div>
     </div>
     <div class="panel hidden" id="p-kept_fp">
       <h2>kept 假正例率：LRAT 判 RELEVANT，但 Δ̃ 说有害</h2>
       <div class="desc">kept 组中 Δ̃ 低于各阈值的比例。Δ̃&lt;0 含大量零附近噪声，强有害看 Δ̃&lt;−0.5</div>
       <div class="chart-wrap"><canvas id="c_kept_fp"></canvas></div>
-      <div class="note amber"><b>关键：</b>强假正例（Δ̃&lt;−0.5）会给 retriever 注错误梯度。它随池变化：<b>narrow 10.0% &gt; mid 9.5% &gt; full 8.5% &gt; tail 7.1%</b>——短轨迹里单个有害 RELEVANT 轮影响更大，长轨迹被摊薄。而 Δ̃&lt;0（含噪声）反而在 tail 最高（44%），因为长轨迹里大量轮次是零附近微负。这些正是 CRPO 连续权重要修正的对象。</div>
+      <div class="note amber"><b>关键：</b>强假正例（Δ̃&lt;−0.5）会给 retriever 注错误梯度。它随池变化：<b>narrow 10.0% &gt; mid 9.5% &gt; full 8.5% &gt; tail 7.1%</b>——短轨迹中单个有害 RELEVANT 轮的相对影响更大，长轨迹中因轮次增多而被稀释。而 Δ̃&lt;0（含噪声）反而在 tail 最高（44%），因为长轨迹中大量轮次为零附近微负。这些正是 CRPO 连续权重需要修正的对象。</div>
     </div>
     <div class="panel hidden" id="p-posside">
       <h2>正侧同质：kept 和 enabler 的正贡献是同一个信号</h2>
       <div class="desc">只取 Δ̃&gt;0 的轮次看分位数（对数 Y 轴）。kept 与 enabler 曲线贴合，dropped 低一个量级</div>
       <div class="chart-wrap"><canvas id="c_posside"></canvas></div>
-      <div class="note purple"><b>结论：</b>当 enabler 真起作用时，信息增益与 kept 同量级、同形状；dropped 正侧小一个量级。<b>narrow 池尤其明显</b>——enabler 正侧 median（+1.41）甚至高于 kept（+0.90）。所以 kept 与 enabler 差别不在正贡献质量，只在正贡献<b>频率</b>与<b>负尾厚度</b>。三组不是"三档质量"，而是 LRAT 二值标签在两个方向都有噪声，CRPO 的 Δ̃ 是连续修正。</div>
+      <div class="note purple"><b>结论：</b>当 enabler 真正起作用时，其信息增益与 kept 同量级、同形状；dropped 正侧低一个量级。<b>narrow 池尤其明显</b>——enabler 正侧 median（+1.41）甚至高于 kept（+0.90）。因此 kept 与 enabler 的差异不在正贡献质量，而在正贡献<b>频率</b>与<b>负尾权重</b>。三组并非简单的"高/中/低三档质量"，而是 LRAT 二值标签在正负两方向均存在噪声，CRPO 的连续 Δ̃ 正是对此的修正。</div>
     </div>
     <div class="panel hidden" id="p-percentile">
-      <h2>分位数折线：kept 正尾最高，enabler 负尾最肥</h2>
+      <h2>分位数折线：kept 正尾最高，enabler 负尾最重</h2>
       <div class="desc">kept(绿) / enabler(红) / dropped(蓝) 的 p1→p99。三组都是零附近交汇，越往两端越分开</div>
       <div class="chart-wrap"><canvas id="c_percentile"></canvas></div>
-      <div class="note gray"><b>看点：</b>p50 附近三组几乎重合，越往两端越分开。正端 kept 最高（full p99 +10.2 vs enabler +8.3 vs dropped +1.7）；负端反过来——<b>enabler 负尾最肥</b>（full p1 −3.35），kept 居中（−2.16），dropped 最浅（−0.86）。这说明 enabler 是"kept 前的探路轮"，既有打开局面的关键一步，也有更多走错方向的负轮；kept 因为被判 RELEVANT，负尾相对收敛但没消失。池越窄尾巴越夸张（narrow enabler p99 +11、p1 −4.1），tail 池被压平，印证长轨迹稀释。</div>
+      <div class="note gray"><b>看点：</b>p50 附近三组几乎重合，越往两端差异越大。正端 kept 最高（full p99 +10.2 vs enabler +8.3 vs dropped +1.7）；负端则相反——<b>enabler 负尾最重</b>（full p1 −3.35），kept 居中（−2.16），dropped 最轻（−0.86）。这说明 enabler 是"首个 kept 轮之前的前置检索轮"，既包含提供关键信息增益的少数轮，也包含更多方向错误的负贡献轮；kept 因被判 RELEVANT，负尾相对收敛但未消失。池越窄，两端尾部越显著（narrow enabler p99 +11、p1 −4.1），tail 池被压缩，印证长轨迹的稀释效应。</div>
     </div>
     <div class="panel hidden" id="p-contribution">
       <h2>Top-5% 贡献分解：kept 与 enabler 的差别在"普通轮"，不在极端轮</h2>
       <div class="desc">三组各自的 top-5% 极端轮均值 / rest-95% 普通轮均值 / overall 全体均值</div>
       <div class="chart-wrap"><canvas id="c_contribution"></canvas></div>
-      <div class="note amber"><b>关键：</b>kept 与 enabler 的 <b>top-5% 极端轮几乎一样高</b>（full 8.71 vs 6.80，narrow 9.94 vs 9.38），差别全在 rest-95%：<b>kept 的普通轮仍净正</b>（full +0.49、narrow +0.94），而 <b>enabler 的普通轮 ≈ 0</b>（full −0.01，tail 甚至略负），dropped 也 ≈ 0。所以 enabler 的正 mean 几乎全靠少数"关键一步"撑起，多数轮是中性/绕路；kept 则是"少数关键一步 + 一整片温和正贡献"。这就是 RELEVANT 标签真正抓到的东西，也是 CRPO 连续 Δ̃ 想在 enabler 里挑出来的那 5%。</div>
+      <div class="note amber"><b>关键：</b>kept 与 enabler 的 <b>top-5% 极端轮几乎等高</b>（full 8.71 vs 6.80，narrow 9.94 vs 9.38），差异集中在 rest-95%：<b>kept 的普通轮仍为净正</b>（full +0.49、narrow +0.94），而 <b>enabler 的普通轮 ≈ 0</b>（full −0.01，tail 略负），dropped 亦 ≈ 0。因此 enabler 的正均值几乎全部由少数极端正轮贡献，其余多数轮为中性或无效检索；kept 则是"少数极端正轮 + 一整片温和正贡献"。这正是 RELEVANT 标签真正捕捉到的信号，也是 CRPO 连续 Δ̃ 希望在 enabler 中甄别出的那 5%。</div>
     </div>
     <div class="panel hidden" id="p-tail_ratio">
       <h2>重尾比例：enabler 的极端值出现率远高于 dropped</h2>
       <div class="desc">pos%、|Δ̃|&gt;2、Δ̃&gt;2、Δ̃&lt;−2 四项占比对比</div>
       <div class="chart-wrap"><canvas id="c_tail_ratio"></canvas></div>
-      <div class="note gray"><b>解读：</b>enabler 的 pos% 常低于 dropped，但 |Δ̃|&gt;2 高出一个量级——少数轮次在"打开局面"与"引入噪声"间剧烈摆动，这就是 mean 高 / median 低 / pos% 低三者并存的机制。narrow 池最极端（|Δ̃|&gt;2 达 30.9%）。</div>
+      <div class="note gray"><b>解读：</b>enabler 的 pos% 常低于 dropped，但 |Δ̃|&gt;2 高出一个量级——少数轮次在"提供关键信息增益"与"引入噪声"两端大幅波动，这正是 mean 高、median 低、pos% 低三者并存的机制。narrow 池最为显著（|Δ̃|&gt;2 达 30.9%）。</div>
     </div>
     <div class="panel hidden" id="p-cross_mean">
       <h2>池 × 组 Mean（跨全部池，与池选择器无关）</h2>
@@ -135,7 +135,7 @@
 
   <div class="summary">
     <h3>一句话总结</h3>
-    <p>三组不是"三档质量"，而是 LRAT 二值 relevance 标签在两个方向上都有噪声：kept 混进约 8–10% 强有害假正例，enabler 里约半数达不到正贡献却藏着与 kept 等值的少数真金。kept 与 enabler 的正贡献同质，差别只在频率与负尾。信号随轨迹变长被稀释——narrow 池最干净、tail 池被压平——所以 narrow 是主力训练池的合理选择。CRPO 的连续 Δ̃ 权重正是对这种双向标签噪声与稀释的修正；无差别抬高 enabler 的 V6 方向错误，应让 Δ̃ 去挑 enabler 里值得留的轮次。</p>
+    <p>三组并非"高/中/低三档质量"，而是 LRAT 二值 relevance 标签在正负两方向均存在噪声：kept 混入约 8–10% 强有害假正例，enabler 中约半数未达到正贡献、但包含与 kept 等值的少数高价值轮。kept 与 enabler 的正贡献同质，差异仅在出现频率与负尾权重。信号随轨迹变长而被稀释——narrow 池最干净、tail 池被压缩——因此 narrow 是主力训练池的合理选择。CRPO 的连续 Δ̃ 权重正是对这种双向标签噪声与稀释效应的修正；无差别抬高 enabler 的 V6 方向有误，应由 Δ̃ 甄别 enabler 中值得保留的轮次。</p>
   </div>
 
 <script>
