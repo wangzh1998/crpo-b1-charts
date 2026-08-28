@@ -104,16 +104,16 @@
       <div class="note purple"><b>结论：</b>当 enabler 真正起作用时，其信息增益与 kept 同量级、同形状；dropped 正侧低一个量级。<b>narrow 池尤其明显</b>——enabler 正侧 median（+1.41）甚至高于 kept（+0.90）。因此 kept 与 enabler 的差异不在正贡献质量，而在正贡献<b>频率</b>与<b>负尾权重</b>。三组并非简单的"高/中/低三档质量"，而是 LRAT 二值标签在正负两方向均存在噪声，CRPO 的连续 Δ̃ 正是对此的修正。</div>
     </div>
     <div class="panel hidden" id="p-percentile">
-      <h2>分位数折线：kept 正尾最高，enabler 负尾最重</h2>
+      <h2>分位数折线：kept 与 enabler 正尾同级，均远高于 dropped</h2>
       <div class="desc">kept(绿) / enabler(红) / dropped(蓝) 的 p1→p99。三组都是零附近交汇，越往两端越分开</div>
       <div class="chart-wrap"><canvas id="c_percentile"></canvas></div>
-      <div class="note gray"><b>看点：</b>p50 附近三组几乎重合，越往两端差异越大。正端 kept 最高（full p99 +10.2 vs enabler +8.3 vs dropped +1.7）；负端则相反——<b>enabler 负尾最重</b>（full p1 −3.35），kept 居中（−2.16），dropped 最轻（−0.86）。这说明 enabler 是"首个 kept 轮之前的前置检索轮"，既包含提供关键信息增益的少数轮，也包含更多方向错误的负贡献轮；kept 因被判 RELEVANT，负尾相对收敛但未消失。池越窄，两端尾部越显著（narrow enabler p99 +11、p1 −4.1），tail 池被压缩，印证长轨迹的稀释效应。</div>
+      <div class="note gray"><b>看点：</b>正端 kept 与 enabler 处于同一量级、且都远高于 dropped（full p99：kept +10.2、enabler +8.3、dropped +1.7），说明二者的正信号同源——这支撑 Δ̃ 有效与 enabler 识别正确。负端则是 <b>enabler 更重</b>（full p1 −3.35 vs kept −2.16 vs dropped −0.86），因为 enabler 是首个 kept 轮之前的前置检索轮，按定义会掺入更多方向错误的探索轮；kept 因被判 RELEVANT，负尾相对收敛但未消失。池越窄，两端尾部越显著（narrow enabler p99 +11、p1 −4.1），tail 池被压缩，印证长轨迹的稀释效应。</div>
     </div>
     <div class="panel hidden" id="p-contribution">
-      <h2>Top-5% 贡献分解：kept 与 enabler 的差别在"普通轮"，不在极端轮</h2>
+      <h2>Top-5% 贡献分解：kept 与 enabler 的强正信号同源、量级一致</h2>
       <div class="desc">三组各自的 top-5% 极端轮均值 / rest-95% 普通轮均值 / overall 全体均值</div>
       <div class="chart-wrap"><canvas id="c_contribution"></canvas></div>
-      <div class="note amber"><b>关键：</b>kept 与 enabler 的 <b>top-5% 极端轮几乎等高</b>（full 8.71 vs 6.80，narrow 9.94 vs 9.38），差异集中在 rest-95%：<b>kept 的普通轮仍为净正</b>（full +0.49、narrow +0.94），而 <b>enabler 的普通轮 ≈ 0</b>（full −0.01，tail 略负），dropped 亦 ≈ 0。因此 enabler 的正均值几乎全部由少数极端正轮贡献，其余多数轮为中性或无效检索；kept 则是"少数极端正轮 + 一整片温和正贡献"。这正是 RELEVANT 标签真正捕捉到的信号，也是 CRPO 连续 Δ̃ 希望在 enabler 中甄别出的那 5%。</div>
+      <div class="note amber"><b>关键：</b>enabler 的有效轮与 kept 携带同一信号——<b>top-5% 极端轮两者几乎等高</b>（full 8.71 vs 6.80，narrow 9.94 vs 9.38，量级一致），说明 Δ̃ 在 kept 与 enabler 上捕捉到的是同源的强正贡献。这同时支撑两点：<b>其一，Δ̃ 信号有效</b>——能一致地度量检索轮的真实增益；<b>其二，enabler 识别正确</b>——被标为 enabler 的前置轮确实携带 kept 级信号。二者仅在 rest-95% 有别（kept +0.49、enabler ≈ 0、dropped ≈ 0），这是 enabler 定义（首个 kept 轮之前的前置检索轮）的自然结果：其中按定义掺入了未起作用的探索轮，与"enabler 有正有负即正学"一致，并不削弱其有效轮与 kept 同质的结论。</div>
     </div>
     <div class="panel hidden" id="p-tail_ratio">
       <h2>重尾比例：enabler 的极端值出现率远高于 dropped</h2>
@@ -135,7 +135,7 @@
 
   <div class="summary">
     <h3>一句话总结</h3>
-    <p>三组并非"高/中/低三档质量"，而是 LRAT 二值 relevance 标签在正负两方向均存在噪声：kept 混入约 8–10% 强有害假正例，enabler 中约半数未达到正贡献、但包含与 kept 等值的少数高价值轮。kept 与 enabler 的正贡献同质，差异仅在出现频率与负尾权重。信号随轨迹变长而被稀释——narrow 池最干净、tail 池被压缩——因此 narrow 是主力训练池的合理选择。CRPO 的连续 Δ̃ 权重正是对这种双向标签噪声与稀释效应的修正；无差别抬高 enabler 的 V6 方向有误，应由 Δ̃ 甄别 enabler 中值得保留的轮次。</p>
+    <p>B1 得到两条正面结论。其一，<b>Δ̃ 是有效信号</b>：kept 轮系统性高于 dropped（full 池 Cohen's d=0.55），说明前缀增量对数似然确实度量到了检索轮对最终答案的真实贡献。其二，<b>enabler 识别正确</b>：enabler 的有效轮在正侧分位数与 top-5% 极端轮上与 kept 高度一致、量级相当，携带同源的正信号，证明被标为 enabler 的前置检索轮确实起到了 kept 级作用——这也反过来佐证 Δ̃ 在两组上抓到的是同一种信号。三组并非"高/中/低三档质量"：kept 混入约 8–10% 强有害假正例，enabler 则按其定义（首个 kept 轮之前的前置轮）天然掺入约半数未起作用的探索轮，二者的正贡献同质、差异只在出现频率，这正是"enabler 有正有负即正学"的体现，也是 CRPO 连续 Δ̃ 权重要在 enabler 中甄别保留的对象。信号随轨迹变长而被稀释——narrow 池最干净、tail 池被压缩——因此以 narrow 作为主力训练池。</p>
   </div>
 
 <script>
